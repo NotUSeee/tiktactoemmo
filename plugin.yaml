@@ -1,0 +1,59 @@
+id: tictactoe
+name: MMO Maid Tic-Tac-Toe
+version: 0.1.0
+description: |
+  Multiplayer tic-tac-toe with cross-server ELO leaderboard. Players create
+  tables and challenge each other in real-time directly from the dashboard
+  using their Discord login.
+author: EmberStream Studio
+homepage: https://mmomaid.cloud
+
+# Capabilities the plugin requests from the platform.
+capabilities:
+  - storage:kv             # ctx.kv — settings, dedup, caches
+  - discord:send_message   # match-result announces, /tictactoe lobby messages
+  - interaction:respond    # responding to slash commands and buttons
+  - proxy:http             # outbound calls to the game server
+
+# Approved outbound HTTP destinations for proxy:http. Operators must add the
+# game server's public hostname here when deploying.
+http_allowlist:
+  - tictactoe.mmomaid.cloud
+
+# Default user-editable settings shown on the plugin Settings page.
+# Stored in ctx.kv under `settings:*`.
+settings:
+  game_server_url:
+    label: Game server URL
+    type: string
+    default: "https://tictactoe.mmomaid.cloud"
+    description: Base URL of the tic-tac-toe game server.
+  shared_secret:
+    label: Plugin → Game Server shared secret
+    type: secret
+    description: |
+      HMAC secret used to sign internal API calls. Must match
+      PLUGIN_SHARED_SECRET on the game server. Rotate if leaked.
+  announce_channel_id:
+    label: Match-result announce channel
+    type: string
+    default: ""
+    description: |
+      Optional Discord channel ID. When set, completed matches with both
+      players above 1400 ELO are announced here. Leave blank to disable.
+  turn_timer_seconds:
+    label: Turn timer (seconds)
+    type: integer
+    default: 30
+    description: |
+      How long each player has to make a move before forfeiting their turn.
+      Must be between 10 and 300 seconds.
+
+dashboard_manifest: dashboard_manifest.json
+
+# Slash commands the plugin handles. The platform registers these with
+# Discord on install. The plugin uses one root command and routes from
+# there with buttons / select menus / modals.
+commands:
+  - name: tictactoe
+    description: Open the MMO Maid Tic-Tac-Toe menu (play, stats, leaderboard).
