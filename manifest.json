@@ -1,127 +1,37 @@
 {
-  "pages": [
+  "id": "tictactoe",
+  "name": "MMO Maid Tic-Tac-Toe",
+  "version": "0.1.0",
+  "description": "Multiplayer tic-tac-toe with cross-server ELO leaderboard. Players create tables and challenge each other in real-time directly from the dashboard using their Discord login.",
+  "author": "EmberStream Studio",
+  "homepage": "https://mmomaid.cloud",
+  "icon": "⚔",
+  "tags": ["games", "multiplayer", "leaderboard", "elo"],
+  "entrypoint": "__main__.py",
+
+  "capabilities": [
+    "storage:kv",
+    "discord:send_message",
+    "interaction:respond",
+    "proxy:http"
+  ],
+
+  "approved_domains": [
+    "tictactoe.mmomaid.cloud"
+  ],
+
+  "slash_commands": [
     {
-      "id": "play",
-      "title": "Play",
-      "icon": "play",
-      "widgets": [
-        {
-          "id": "tictactoe_iframe",
-          "type": "iframe",
-          "label": "Tic-Tac-Toe Hall",
-          "rpc_method": "dashboard.get_play_iframe_url",
-          "rpc_params": {},
-          "width": "full",
-          "height": 760
-        }
-      ]
-    },
-    {
-      "id": "overview",
-      "title": "Overview",
-      "icon": "chart-bar",
-      "widgets": [
-        {
-          "id": "open_tables",
-          "type": "stat_card",
-          "label": "Open Tables",
-          "rpc_method": "dashboard.get_open_tables_count",
-          "rpc_params": {},
-          "width": "third"
-        },
-        {
-          "id": "active_players",
-          "type": "stat_card",
-          "label": "Players Online",
-          "rpc_method": "dashboard.get_active_players_count",
-          "rpc_params": {},
-          "width": "third"
-        },
-        {
-          "id": "games_today",
-          "type": "stat_card",
-          "label": "Games Played (24h)",
-          "rpc_method": "dashboard.get_games_today",
-          "rpc_params": {},
-          "width": "third"
-        },
-        {
-          "id": "games_trend",
-          "type": "chart",
-          "label": "Games Played (7d)",
-          "rpc_method": "dashboard.get_games_trend",
-          "rpc_params": { "period": "7d" },
-          "chart_type": "line",
-          "width": "full"
-        }
-      ]
-    },
-    {
-      "id": "leaderboard",
-      "title": "Leaderboard",
-      "icon": "trophy",
-      "widgets": [
-        {
-          "id": "global_leaderboard",
-          "type": "table",
-          "label": "Top 25 Players (Cross-Server)",
-          "rpc_method": "dashboard.get_leaderboard",
-          "rpc_params": { "limit": 25 },
-          "width": "full",
-          "columns": [
-            { "key": "rank",       "label": "#",        "width": 60,  "align": "right"  },
-            { "key": "username",   "label": "Player",   "align": "left"  },
-            { "key": "elo",        "label": "ELO",      "width": 100, "align": "right" },
-            { "key": "wins",       "label": "Wins",     "width": 80,  "align": "right" },
-            { "key": "losses",     "label": "Losses",   "width": 80,  "align": "right" },
-            { "key": "draws",      "label": "Draws",    "width": 80,  "align": "right" },
-            { "key": "win_pct",    "label": "Win %",    "width": 90,  "align": "right" },
-            { "key": "best_streak","label": "Best Streak","width": 110,"align": "right" }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "settings",
-      "title": "Settings",
-      "icon": "cog",
-      "widgets": [
-        {
-          "id": "settings_form",
-          "type": "form",
-          "label": "Plugin Settings",
-          "rpc_method": "dashboard.get_settings",
-          "save_method": "dashboard.save_settings",
-          "rpc_params": {},
-          "width": "full",
-          "fields": [
-            {
-              "key": "game_server_url",
-              "label": "Game server URL",
-              "type": "text",
-              "placeholder": "https://tictactoe.mmomaid.cloud"
-            },
-            {
-              "key": "shared_secret",
-              "label": "Plugin → Game Server shared secret",
-              "type": "secret",
-              "placeholder": "(leave blank to keep current)"
-            },
-            {
-              "key": "announce_channel_id",
-              "label": "Match-result announce channel ID",
-              "type": "text",
-              "placeholder": "Optional. Discord channel ID."
-            },
-            {
-              "key": "turn_timer_seconds",
-              "label": "Turn timer (seconds)",
-              "type": "integer",
-              "placeholder": "30"
-            }
-          ]
-        }
-      ]
+      "name": "tictactoe",
+      "description": "Open the MMO Maid Tic-Tac-Toe menu (play, stats, leaderboard)."
     }
+  ],
+
+  "dashboard_manifest": "dashboard_manifest.json",
+
+  "permissions_user_facing": [
+    "Read your Discord username and avatar to display in the lobby and on match results",
+    "Send messages in a configured announce channel (optional, only if you set one)",
+    "Track your tic-tac-toe ELO rating and match history globally across all servers"
   ]
 }
