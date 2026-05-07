@@ -65,6 +65,33 @@ class GameServerClient:
 
     # ── Low-level call ─────────────────────────────────────────────────────
 
+    @staticmethod
+    def _read_response(resp: Dict[str, Any]) -> tuple[int, str]:
+        """Pull (status, body_text) out of a proxy.request response.
+
+        The MMO Maid SDK returns ``{status, headers, body_bytes, truncated}``
+        — the body field is ``body_bytes`` (a UTF-8 decoded string despite the
+        name). We fall back to ``body`` / ``text`` for any older SDK build that
+        used those names.
+        """
+        status = int(
+            resp.get("status")
+            or resp.get("status_code")
+            or 0
+        )
+        text = (
+            resp.get("body_bytes")
+            or resp.get("body")
+            or resp.get("text")
+            or ""
+        )
+        if not isinstance(text, str):
+            try:
+                text = text.decode("utf-8", errors="replace")
+            except Exception:
+                text = str(text)
+        return status, text
+
     def _post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
         self._load_settings()
         body_str = json.dumps(body, separators=(",", ":"), sort_keys=True)
@@ -82,12 +109,11 @@ class GameServerClient:
         except Exception as e:
             raise GameServerError(f"network error calling {path}: {e}")
 
-        status = int(resp.get("status_code") or resp.get("status") or 0)
-        text = resp.get("body") or resp.get("text") or ""
+        status, text = self._read_response(resp)
         if not (200 <= status < 300):
             raise GameServerError(f"{path} returned {status}: {text[:300]}")
         try:
-            return json.loads(text) if isinstance(text, str) else (text or {})
+            return json.loads(text) if text else {}
         except json.JSONDecodeError as e:
             raise GameServerError(f"{path} returned non-JSON body: {e}")
 
@@ -103,12 +129,11 @@ class GameServerClient:
         except Exception as e:
             raise GameServerError(f"network error calling {path}: {e}")
 
-        status = int(resp.get("status_code") or resp.get("status") or 0)
-        text = resp.get("body") or resp.get("text") or ""
+        status, text = self._read_response(resp)
         if not (200 <= status < 300):
             raise GameServerError(f"{path} returned {status}: {text[:300]}")
         try:
-            return json.loads(text) if isinstance(text, str) else (text or {})
+            return json.loads(text) if text else {}
         except json.JSONDecodeError as e:
             raise GameServerError(f"{path} returned non-JSON body: {e}")
 
@@ -156,14 +181,3 @@ class GameServerClient:
         """
         return self._post("/api/internal/metrics", {})
 
-    def announce_payload(self, *, since_ts: float) -> Dict[str, Any]:
-        """Pull match-result announcements queued since a given timestamp.
-
-        Returns ``{"announcements": [{"winner_id", "winner_name", "loser_id",
-        "loser_name", "winner_elo", "loser_elo", "elo_delta",
-        "completed_at"}, ...]}``.
-        """
-        return self._post(
-            "/api/internal/pending_announcements",
-            {"since_ts": float(since_ts)},
-        )

@@ -1,22 +1,6 @@
 {
   "pages": [
     {
-      "id": "play",
-      "title": "Play",
-      "icon": "play",
-      "widgets": [
-        {
-          "id": "tictactoe_iframe",
-          "type": "iframe",
-          "label": "Tic-Tac-Toe Hall",
-          "rpc_method": "dashboard.get_play_iframe_url",
-          "rpc_params": {},
-          "width": "full",
-          "height": 760
-        }
-      ]
-    },
-    {
       "id": "overview",
       "title": "Overview",
       "icon": "chart-bar",
@@ -106,12 +90,6 @@
               "label": "Plugin → Game Server shared secret",
               "type": "secret",
               "placeholder": "(leave blank to keep current)"
-            },
-            {
-              "key": "announce_channel_id",
-              "label": "Match-result announce channel ID",
-              "type": "text",
-              "placeholder": "Optional. Discord channel ID."
             },
             {
               "key": "turn_timer_seconds",

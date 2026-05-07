@@ -1,7 +1,7 @@
 {
-  "id": "ticktactoe",
+  "id": "tictactoe",
   "name": "MMO Maid Tic-Tac-Toe",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Multiplayer tic-tac-toe with cross-server ELO leaderboard. Players create tables and challenge each other in real-time directly from the dashboard using their Discord login.",
   "author": "EmberStream Studio",
   "homepage": "https://mmomaid.cloud",
@@ -11,12 +11,11 @@
 
   "capabilities": [
     "storage:kv",
-    "discord:send_message",
     "interaction:respond",
     "proxy:http"
   ],
 
-  "approved_domains": [
+  "proxy_domains": [
     "tictactoe.mmomaid.cloud"
   ],
 
@@ -36,7 +35,6 @@
 
   "permissions_user_facing": [
     "Read your Discord username and avatar to display in the lobby and on match results",
-    "Send messages in a configured announce channel (optional, only if you set one)",
     "Track your tic-tac-toe ELO rating and match history globally across all servers"
   ]
 }
