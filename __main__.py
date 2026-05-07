@@ -98,14 +98,12 @@ def _event_user_id(event: dict) -> str:
     return ""
 
 
-def _event_username(event: dict, user_id: str = "") -> str:
+def _event_username(ctx, event: dict, user_id: str = "") -> str:
     """Best-effort display name for an interaction event.
 
-    Interaction events don't carry a username in the canonical SDK shape, so
-    we check several optional keys before falling back to a friendly handle
-    derived from the user_id. We deliberately do NOT call ctx.discord.get_member
-    here because that would require the discord:read capability for what is
-    only ever cosmetic display.
+    Interaction events don't carry a username, so we check optional keys
+    first, then fall back to ctx.discord.get_member (requires discord:read)
+    to pull the real Discord name, and finally to a "Player XXXX" handle.
     """
     for key in ("username", "user_name", "display_name", "global_name"):
         v = event.get(key)
@@ -118,8 +116,14 @@ def _event_username(event: dict, user_id: str = "") -> str:
             if v:
                 return str(v)
     if user_id:
-        # "Player 1234" — last 4 of the snowflake. Stable per-user, easy to
-        # eyeball in logs and ephemeral responses.
+        try:
+            member = ctx.discord.get_member(user_id=user_id) or {}
+            for key in ("nick", "display_name", "username"):
+                v = member.get(key)
+                if v:
+                    return str(v)
+        except Exception:
+            pass
         return f"Player {user_id[-4:]}"
     return "Player"
 
@@ -136,7 +140,7 @@ def handle_tictactoe(ctx: Context, event: dict) -> None:
     minutes to send the followup.
     """
     user_id = _event_user_id(event)
-    username = _event_username(event, user_id=user_id)
+    username = _event_username(ctx, event, user_id=user_id)
 
     ctx.interaction.defer(ephemeral=True)
 
@@ -189,7 +193,7 @@ def handle_tictactoe(ctx: Context, event: dict) -> None:
 def handle_play(ctx: Context, event: dict) -> None:
     """Send the user a personal signed link into the lobby."""
     user_id = _event_user_id(event)
-    username = _event_username(event, user_id=user_id)
+    username = _event_username(ctx, event, user_id=user_id)
 
     if not user_id:
         ctx.log(
@@ -243,7 +247,7 @@ def handle_play(ctx: Context, event: dict) -> None:
 @plugin.on_component("ttt_btn_stats")
 def handle_stats(ctx: Context, event: dict) -> None:
     user_id = _event_user_id(event)
-    username = _event_username(event, user_id=user_id)
+    username = _event_username(ctx, event, user_id=user_id)
 
     if not user_id:
         ctx.log(

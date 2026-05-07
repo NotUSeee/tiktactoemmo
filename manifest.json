@@ -11,6 +11,7 @@
 
   "capabilities": [
     "storage:kv",
+    "discord:read",
     "interaction:respond",
     "proxy:http"
   ],
