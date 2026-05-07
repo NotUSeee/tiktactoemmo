@@ -61,6 +61,50 @@ def _viewer_username(params: dict) -> str:
     return ""
 
 
+def _event_user_id(event: dict) -> str:
+    """Pull the Discord user ID out of an interaction_create event.
+
+    The SDK's canonical shape puts ``user_id`` at the top level of ``event``.
+    Older or alternate hosts may nest it under ``event["user"]["id"]``;
+    we accept both for forward-compatibility.
+    """
+    uid = event.get("user_id")
+    if uid:
+        return str(uid)
+    nested = event.get("user")
+    if isinstance(nested, dict):
+        v = nested.get("id") or nested.get("user_id")
+        if v:
+            return str(v)
+    return ""
+
+
+def _event_username(event: dict, user_id: str = "") -> str:
+    """Best-effort display name for an interaction event.
+
+    Interaction events don't carry a username in the canonical SDK shape, so
+    we check several optional keys before falling back to a friendly handle
+    derived from the user_id. We deliberately do NOT call ctx.discord.get_member
+    here because that would require the discord:read capability for what is
+    only ever cosmetic display.
+    """
+    for key in ("username", "user_name", "display_name", "global_name"):
+        v = event.get(key)
+        if v:
+            return str(v)
+    nested = event.get("user")
+    if isinstance(nested, dict):
+        for key in ("username", "global_name", "display_name", "name"):
+            v = nested.get(key)
+            if v:
+                return str(v)
+    if user_id:
+        # "Player 1234" — last 4 of the snowflake. Stable per-user, easy to
+        # eyeball in logs and ephemeral responses.
+        return f"Player {user_id[-4:]}"
+    return "Player"
+
+
 def _format_elo_delta(delta: int) -> str:
     if delta > 0:
         return f"+{delta}"
@@ -73,21 +117,28 @@ def _format_elo_delta(delta: int) -> str:
 @plugin.on_slash_command("tictactoe")
 def handle_tictactoe(ctx: Context, event: dict) -> None:
     """Root slash command — opens the menu in Discord with action buttons."""
-    user = event.get("user") or {}
-    username = user.get("username") or user.get("global_name") or "Player"
+    user_id = _event_user_id(event)
+    username = _event_username(event, user_id=user_id)
 
     # Try to grab the user's current ELO so we can show it inline.
     headline = f"**{username}**, welcome to MMO Maid Tic-Tac-Toe."
-    try:
-        stats = _client(ctx).stats(user_id=str(user.get("id") or ""))
-        elo = int(stats.get("elo", 1200))
-        record = (
-            f"Record: **{stats.get('wins', 0)}W / "
-            f"{stats.get('losses', 0)}L / {stats.get('draws', 0)}D**"
+    if user_id:
+        try:
+            stats = _client(ctx).stats(user_id=user_id)
+            elo = int(stats.get("elo", 1200))
+            record = (
+                f"Record: **{stats.get('wins', 0)}W / "
+                f"{stats.get('losses', 0)}L / {stats.get('draws', 0)}D**"
+            )
+            headline += f"\nCurrent ELO: **{elo}**  ·  {record}"
+        except GameServerError as e:
+            ctx.log(f"stats fetch failed: {e}", level="warning")
+            headline += "\n_Stats temporarily unavailable._"
+    else:
+        ctx.log(
+            f"tictactoe slash: missing user_id; event keys={sorted(event.keys())}",
+            level="warning",
         )
-        headline += f"\nCurrent ELO: **{elo}**  ·  {record}"
-    except GameServerError as e:
-        ctx.log(f"stats fetch failed: {e}", level="warning")
         headline += "\n_Stats temporarily unavailable._"
 
     body = (
@@ -116,11 +167,14 @@ def handle_tictactoe(ctx: Context, event: dict) -> None:
 @plugin.on_component("ttt_btn_play")
 def handle_play(ctx: Context, event: dict) -> None:
     """Send the user a personal signed link into the lobby."""
-    user = event.get("user") or {}
-    user_id = str(user.get("id") or "")
-    username = user.get("username") or user.get("global_name") or "Player"
+    user_id = _event_user_id(event)
+    username = _event_username(event, user_id=user_id)
 
     if not user_id:
+        ctx.log(
+            f"ttt_btn_play: missing user_id; event keys={sorted(event.keys())}",
+            level="warning",
+        )
         ctx.interaction.respond(
             content="Couldn't identify your Discord account. Try again in a moment.",
             ephemeral=True,
@@ -165,9 +219,19 @@ def handle_play(ctx: Context, event: dict) -> None:
 
 @plugin.on_component("ttt_btn_stats")
 def handle_stats(ctx: Context, event: dict) -> None:
-    user = event.get("user") or {}
-    user_id = str(user.get("id") or "")
-    username = user.get("username") or user.get("global_name") or "Player"
+    user_id = _event_user_id(event)
+    username = _event_username(event, user_id=user_id)
+
+    if not user_id:
+        ctx.log(
+            f"ttt_btn_stats: missing user_id; event keys={sorted(event.keys())}",
+            level="warning",
+        )
+        ctx.interaction.respond(
+            content="Couldn't identify your Discord account. Try again in a moment.",
+            ephemeral=True,
+        )
+        return
 
     try:
         stats = _client(ctx).stats(user_id=user_id)
