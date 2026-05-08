@@ -69,8 +69,10 @@
       // The SDK proxies our RPC to the parent dashboard, which forwards it
       // to the plugin's `dashboard.get_play_iframe_url` handler. The handler
       // returns a JWT-signed lobby URL bound to this user's Discord identity.
+      // Note: MaidSDK.rpc() auto-prepends "dashboard." to the method name,
+      // so we pass just "get_play_iframe_url" (not the full prefixed form).
       MaidSDK.ready(function () {
-        MaidSDK.rpc("dashboard.get_play_iframe_url", {})
+        MaidSDK.rpc("get_play_iframe_url", {})
           .then(function (data) {
             var url = (data && data.url) || "";
             if (!url) {
