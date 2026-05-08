@@ -4,8 +4,13 @@ MMO Maid Tic-Tac-Toe — plugin entry point.
 This module owns:
   - /tictactoe slash command (root menu with buttons)
   - Button handlers (Play, My Stats, Leaderboard, How to play)
-  - Dashboard data handlers (iframe URL, overview, leaderboard, settings)
-  - Scheduled announce sweep for big matches
+  - One dashboard handler — ``dashboard.get_play_iframe_url`` — that mints
+    a personalised JWT-signed lobby URL for the iframe-mode Play page.
+
+The dashboard runs in iframe mode: a single bundled HTML file (play.html)
+embeds the game server's lobby in an iframe. Leaderboard / Stats /
+Settings UIs all live on the game server itself rather than being rebuilt
+as widget-mode pages here.
 
 The plugin never holds game state — every button or dashboard call goes
 through gs_client.GameServerClient, which signs the request with the
@@ -14,8 +19,7 @@ boards, ELO, and match history.
 """
 from __future__ import annotations
 
-import time
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 from mmo_maid_sdk import (
     Plugin,
@@ -51,33 +55,26 @@ def _i(d: dict, key: str, default: int = 0) -> int:
         return int(default)
 
 
-# Module-level metrics cache: per-server snapshot, 5s TTL. The Overview
-# dashboard renders four stat-card / chart widgets that all derive from the
-# same metrics() payload — without this, every refresh fires four redundant
-# POSTs to the game server. Pool workers may serve multiple servers, so the
-# cache key is the server_id.
-_METRICS_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
-_METRICS_TTL_SEC = 5.0
+def _viewer_id(params: dict) -> str:
+    """Extract the viewing dashboard user's Discord ID from RPC params.
 
-
-def _cached_metrics(ctx: Context) -> Dict[str, Any]:
-    """Return ``metrics()`` for this server, cached for ~5s.
-
-    Returns an empty dict on game-server errors so widget handlers can fall
-    back to zero-values rather than failing the whole dashboard.
+    The platform injects both ``discord_user_id`` and ``viewer_user_id``
+    into dashboard RPC params; we accept either for robustness.
     """
-    key = str(ctx.server_id or "_global")
-    now = time.monotonic()
-    cached = _METRICS_CACHE.get(key)
-    if cached and (now - cached[0]) < _METRICS_TTL_SEC:
-        return cached[1]
-    try:
-        m = _client(ctx).metrics() or {}
-    except GameServerError as e:
-        ctx.log(f"metrics fetch failed: {e}", level="warning")
-        m = {}
-    _METRICS_CACHE[key] = (now, m)
-    return m
+    for key in ("discord_user_id", "viewer_user_id", "user_id"):
+        v = params.get(key)
+        if v:
+            return str(v)
+    return ""
+
+
+def _viewer_username(params: dict) -> str:
+    """Extract the viewing user's display name if available."""
+    for key in ("username", "viewer_username", "display_name"):
+        v = params.get(key)
+        if v:
+            return str(v)
+    return ""
 
 
 def _event_user_id(event: dict) -> str:
@@ -350,104 +347,43 @@ def handle_help(ctx: Context, event: dict) -> None:
     ctx.interaction.respond(content=body, ephemeral=True)
 
 
-# ── Dashboard handlers ─────────────────────────────────────────────────────
+# ── Dashboard handler ──────────────────────────────────────────────────────
+#
+# The dashboard manifest is `mode: "iframe"` with a single `play.html` page.
+# That page asks us (via the SDK postMessage bridge) for a personalised lobby
+# URL bound to the viewing user's Discord identity, then sets it as the
+# iframe src. All other UIs (leaderboard, stats, settings) live on the game
+# server itself and are reachable via tabs in the embedded lobby.
 
 
-@plugin.on_dashboard("get_open_tables_count")
-def dash_open_tables(ctx: Context, params: dict) -> Dict[str, Any]:
-    return {"value": _i(_cached_metrics(ctx), "open_tables", 0)}
+@plugin.on_dashboard("get_play_iframe_url")
+def dash_get_play_iframe_url(ctx: Context, params: dict) -> Dict[str, Any]:
+    """Mint a JWT-signed lobby URL bound to the viewing user.
 
+    Falls back to the public lobby (anonymous, read-only) if the platform
+    didn't pass a viewer user_id — the lobby's Discord OAuth flow can pick
+    them up from there.
+    """
+    user_id = _viewer_id(params)
+    username = _viewer_username(params)
 
-@plugin.on_dashboard("get_active_players_count")
-def dash_active_players(ctx: Context, params: dict) -> Dict[str, Any]:
-    return {"value": _i(_cached_metrics(ctx), "active_players", 0)}
+    if not user_id:
+        ctx.log(
+            "dashboard.get_play_iframe_url called without a viewer user_id; "
+            f"params keys: {list(params.keys())}",
+            level="warning",
+        )
+        base = ctx.kv.get("settings:game_server_url") or "https://tictactoe.mmomaid.cloud"
+        return {"url": str(base).rstrip("/") + "/"}
 
-
-@plugin.on_dashboard("get_games_today")
-def dash_games_today(ctx: Context, params: dict) -> Dict[str, Any]:
-    return {"value": _i(_cached_metrics(ctx), "games_24h", 0)}
-
-
-@plugin.on_dashboard("get_games_trend")
-def dash_games_trend(ctx: Context, params: dict) -> Dict[str, Any]:
-    trend = _cached_metrics(ctx).get("trend_7d") or {}
-    return {
-        "labels": trend.get("labels") or [],
-        "series": [{"name": "Games", "data": trend.get("data") or []}],
-    }
-
-
-@plugin.on_dashboard("get_leaderboard")
-def dash_leaderboard(ctx: Context, params: dict) -> Dict[str, Any]:
-    limit = _i(params, "limit", 25)
     try:
-        result = _client(ctx).leaderboard(limit=limit)
+        info = _client(ctx).lobby_url(
+            user_id=user_id, username=username, guild_id=ctx.server_id,
+        )
+        return {"url": info.get("url", "")}
     except GameServerError as e:
-        ctx.log(f"dashboard leaderboard failed: {e}", level="warning")
-        return {"rows": [], "total": 0}
-
-    rows = result.get("rows") or []
-    # Format win_pct as a percentage string for the table widget.
-    formatted = []
-    for r in rows:
-        wins = _i(r, "wins", 0)
-        losses = _i(r, "losses", 0)
-        draws = _i(r, "draws", 0)
-        total = wins + losses + draws
-        pct = (wins / total * 100) if total else 0.0
-        formatted.append({
-            "rank": r.get("rank"),
-            "username": r.get("username") or "Unknown",
-            "elo": _i(r, "elo", 1200),
-            "wins": wins,
-            "losses": losses,
-            "draws": draws,
-            "win_pct": f"{pct:.1f}%",
-            "best_streak": _i(r, "best_streak", 0),
-        })
-    return {"rows": formatted, "total": len(formatted)}
-
-
-@plugin.on_dashboard("get_settings")
-def dash_get_settings(ctx: Context, params: dict) -> Dict[str, Any]:
-    raw_timer = ctx.kv.get("settings:turn_timer_seconds")
-    try:
-        timer = int(raw_timer) if raw_timer not in (None, "") else 30
-    except (TypeError, ValueError):
-        timer = 30
-    return {
-        "values": {
-            "game_server_url": ctx.kv.get("settings:game_server_url") or "https://tictactoe.mmomaid.cloud",
-            # Never echo the secret back to the client.
-            "shared_secret": "",
-            "turn_timer_seconds": timer,
-        },
-    }
-
-
-@plugin.on_dashboard("save_settings")
-def dash_save_settings(ctx: Context, params: dict) -> Dict[str, Any]:
-    values = params.get("values") or params
-    if not isinstance(values, dict):
-        return {"ok": False, "error": "invalid payload"}
-
-    if "game_server_url" in values:
-        url = str(values["game_server_url"] or "").strip()
-        if url:
-            ctx.kv.set("settings:game_server_url", url)
-    if "shared_secret" in values:
-        sec = str(values["shared_secret"] or "")
-        # Only overwrite if a non-empty value was supplied (blank = keep current).
-        if sec:
-            ctx.kv.set("settings:shared_secret", sec)
-    if "turn_timer_seconds" in values:
-        try:
-            t = int(values["turn_timer_seconds"])
-            if 10 <= t <= 300:
-                ctx.kv.set("settings:turn_timer_seconds", t)
-        except (ValueError, TypeError):
-            pass
-    return {"ok": True}
+        ctx.log(f"dashboard lobby_url failed: {e}", level="error")
+        return {"url": "", "error": "Game server unreachable"}
 
 
 # ── Lifecycle hooks ────────────────────────────────────────────────────────
