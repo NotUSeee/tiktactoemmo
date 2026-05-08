@@ -10,6 +10,25 @@ Signature format (header `X-MMO-Signature`):
 
 The server rejects requests with timestamps older than 60 seconds (replay
 protection). Both sides use UTC seconds.
+
+──────────────────────────────────────────────────────────────────────
+SECURITY NOTE — global shared secret
+──────────────────────────────────────────────────────────────────────
+``GAME_SERVER_URL`` and ``SHARED_SECRET`` below are global constants
+shared by every install of this plugin. The trade-off is documented:
+
+  + Simpler than per-install settings — no Settings UI, no KV storage,
+    no admin onboarding step.
+  - The secret is visible in the source on GitHub. Anyone who reads
+    the repo can mint forged HMAC requests to the game server, which
+    means they can forge user_id values and impersonate anyone for
+    leaderboard / stats purposes.
+
+This is acceptable for tic-tac-toe (worst case = fake leaderboard
+ranks). DO NOT copy this pattern to a plugin that handles money,
+private data, or anything destructive. For those, use a per-install
+secret entered by the server admin (KV-backed, edited via a dashboard
+Settings page) or a platform-managed credential system.
 """
 from __future__ import annotations
 
@@ -17,7 +36,12 @@ import hashlib
 import hmac
 import json
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
+
+
+# ── Game server config (global, shared by all installs) ────────────────────
+GAME_SERVER_URL = "https://tictactoe.mmomaid.cloud"
+SHARED_SECRET = "aea29c5ba1034b7ecf4936e0429c79da8cfdb10a74f6eed40c0301e1a8313a83"
 
 
 class GameServerError(Exception):
@@ -36,26 +60,11 @@ class GameServerClient:
 
     def __init__(self, ctx) -> None:
         self._ctx = ctx
-        self._base_url: Optional[str] = None
-        self._secret: Optional[str] = None
-
-    # ── Settings access ────────────────────────────────────────────────────
-
-    def _load_settings(self) -> None:
-        """Lazily load game_server_url and shared_secret from KV settings."""
-        if self._base_url is not None and self._secret is not None:
-            return
-        url = self._ctx.kv.get("settings:game_server_url") or "https://tictactoe.mmomaid.cloud"
-        secret = self._ctx.kv.get("settings:shared_secret") or ""
-        self._base_url = str(url).rstrip("/")
-        self._secret = str(secret)
+        self._base_url = GAME_SERVER_URL.rstrip("/")
+        self._secret = SHARED_SECRET
 
     def _sign(self, method: str, path: str, body: str) -> str:
         """Build the X-MMO-Signature header value."""
-        if not self._secret:
-            raise GameServerError(
-                "shared_secret is not configured. Set it on the plugin Settings page."
-            )
         ts = str(int(time.time()))
         payload = f"{ts}\n{method.upper()}\n{path}\n{body}".encode("utf-8")
         digest = hmac.new(
@@ -93,7 +102,6 @@ class GameServerClient:
         return status, text
 
     def _post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
-        self._load_settings()
         body_str = json.dumps(body, separators=(",", ":"), sort_keys=True)
         sig = self._sign("POST", path, body_str)
         url = f"{self._base_url}{path}"
@@ -118,7 +126,6 @@ class GameServerClient:
             raise GameServerError(f"{path} returned non-JSON body: {e}")
 
     def _get(self, path: str) -> Dict[str, Any]:
-        self._load_settings()
         sig = self._sign("GET", path, "")
         url = f"{self._base_url}{path}"
         try:

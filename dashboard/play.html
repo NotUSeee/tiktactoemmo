@@ -66,17 +66,33 @@
         line.textContent = "Couldn't open the hall: " + msg;
       }
 
+      // The platform's outer iframe defaults to ~400px which clips the game
+      // lobby. Ask for a generous height that fits the table list + active
+      // table. The bridge clamps this to the [200, 5000] range so a typo
+      // can't break the dashboard layout.
+      function requestTallIframe() {
+        if (window.MaidSDK && typeof MaidSDK.resize === "function") {
+          MaidSDK.resize(900);
+        }
+      }
+
       // The SDK proxies our RPC to the parent dashboard, which forwards it
       // to the plugin's `dashboard.get_play_iframe_url` handler. The handler
       // returns a JWT-signed lobby URL bound to this user's Discord identity.
       // Note: MaidSDK.rpc() auto-prepends "dashboard." to the method name,
       // so we pass just "get_play_iframe_url" (not the full prefixed form).
       MaidSDK.ready(function () {
+        requestTallIframe();
         MaidSDK.rpc("get_play_iframe_url", {})
           .then(function (data) {
             var url = (data && data.url) || "";
             if (!url) {
-              showError("game server returned no URL");
+              // Surface the real reason if the handler attached one — saves
+              // the dev from grep-ing logs every time.
+              var reason = (data && data.error)
+                ? data.error
+                : "game server returned no URL";
+              showError(reason);
               return;
             }
             frame.addEventListener("load", function () {
