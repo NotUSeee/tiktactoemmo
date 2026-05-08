@@ -1,7 +1,7 @@
 {
   "id": "ticktactoe",
   "name": "MMO Maid Tic-Tac-Toe",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Multiplayer tic-tac-toe with cross-server ELO leaderboard. Players create tables and challenge each other in real-time directly from the dashboard using their Discord login.",
   "author": "EmberStream Studio",
   "homepage": "https://mmomaid.cloud",
